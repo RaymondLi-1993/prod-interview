@@ -34,3 +34,5 @@ Thumbs.db
 
 # local working contract — intentionally untracked
 CLAUDE.md
+.claude-backup.md
+**/.claude-backup.md
