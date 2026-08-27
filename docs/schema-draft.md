@@ -25,7 +25,7 @@ Method used for every table:
 |---|---|
 | `users` | not started |
 | `sessions` | ✅ designed |
-| `session_stages` | 🟡 one open question (timers) |
+| `session_stages` | ✅ designed |
 | `messages` | not started |
 | `problems` | not started |
 | `coding_submissions` | not started |
@@ -135,6 +135,9 @@ CREATE TABLE session_stages (
 
   UNIQUE (session_id, position)
 );
+
+CREATE UNIQUE INDEX uq_stages_one_active_per_session
+  ON session_stages (session_id) WHERE status = 'active';
 ```
 
 ### Decisions
@@ -183,15 +186,19 @@ created when the session starts, but stage 3 may not begin for 45 minutes.
 Read only alongside its stage, never queried across sessions — *structure what
 you query, blob what you only read*. `DEFAULT '{}'` so it is never null-checked.
 
-### Open question
+**No enforced time limit — duration is recorded, not policed.** A wall clock
+would contradict resumability: returning the next day would open a stage that
+expired sixteen hours ago, so either the timer is fake or resume is. Active-time
+tracking would fix that but costs an accumulated `elapsed_seconds` column,
+client heartbeats, and edge cases around unannounced tab closes and duplicate
+tabs. Since this is a practice tool, `completed_at - started_at` gives the report
+everything it needs ("you spent 34 minutes on a 25-minute problem") with zero
+extra machinery. Revisit if simulating time pressure becomes a goal — the timing
+columns are identical either way.
 
-**Timers under resumption.** The coding stage is 35 minutes; the user closes the
-tab at minute 20 and returns tomorrow. Does the clock keep running?
-
-- **Wall time** — `started_at` alone suffices. Simple, but stepping away for
-  lunch costs the interview.
-- **Active time only** — needs an accumulated `elapsed_seconds` column plus
-  client heartbeats. Fairer, but real machinery.
-
-Indexes are not yet chosen for this table; they follow once the timer question
-settles.
+**Indexes are nearly free here.** A `UNIQUE` constraint is implemented as a
+unique index, so `UNIQUE (session_id, position)` already serves both
+"all stages for a session, in order" and any FK lookup on `session_id` via its
+leftmost prefix. Only one index needs adding — and like its counterpart on
+`sessions`, it does double duty as both the "resume where they left off" lookup
+and the constraint making two active stages impossible.
