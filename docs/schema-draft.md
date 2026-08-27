@@ -23,7 +23,7 @@ Method used for every table:
 
 | Table | State |
 |---|---|
-| `users` | not started |
+| `users` | ✅ designed |
 | `sessions` | ✅ designed |
 | `session_stages` | ✅ designed |
 | `messages` | not started |
@@ -31,6 +31,81 @@ Method used for every table:
 | `coding_submissions` | not started |
 | `session_reports` | not started |
 | `stage_evaluations` | not started |
+
+---
+
+## `users`
+
+**One row = one person who can log in and own sessions.**
+
+```sql
+CREATE TABLE users (
+  id                uuid PRIMARY KEY,
+
+  auth_provider     text NOT NULL DEFAULT 'supabase',
+  auth_provider_id  text NOT NULL,
+
+  email             text NOT NULL,
+  display_name      text,
+
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  deleted_at        timestamptz
+);
+
+CREATE UNIQUE INDEX uq_users_email
+  ON users (email) WHERE deleted_at IS NULL;
+
+CREATE UNIQUE INDEX uq_users_provider_identity
+  ON users (auth_provider, auth_provider_id) WHERE deleted_at IS NULL;
+```
+
+### Decisions
+
+**One row is a person, not a login method.** If a row were one credential,
+signing up with Google and later with GitHub would produce two rows — two
+accounts, two split session histories, one confused human. Login methods are
+attributes of a person, not the person's identity.
+
+**Surrogate primary key, because nothing real is stable.** Emails change, names
+change, providers get swapped. Any natural key eventually needs updating, and
+updating a primary key means updating every referencing row in the database. A
+meaningless generated ID never has to change. Natural keys still get `UNIQUE`
+constraints — they protect integrity without carrying identity.
+
+**`auth_provider_id` is translation, not verification.** Authentication never
+touches the database: the JWT's signature is verified cryptographically against
+Supabase's public key, with no network call and no lookup. Only *after* the
+token is trusted is `sub` used to find the local row. The flow is
+`JWT sub → users.auth_provider_id → users.id`, and everything internal keys off
+`users.id`.
+
+**We own the mapping so the provider is swappable.** Using Supabase's ID as the
+primary key would embed a vendor's identifier in every foreign key in the
+database. Owning `id` means switching to Clerk or Auth0 is a one-column update.
+
+**Uniqueness is on the pair `(auth_provider, auth_provider_id)`.** Every row
+holds the same `auth_provider` value, so constraining that column alone would
+cap the entire application at one user. The pair reads as *within a given
+provider, each ID appears once* — and it stays correct when a second provider
+is added.
+
+**No separate signup endpoint — just-in-time provisioning.** The first time an
+unrecognized `sub` arrives, the row is created; every later login finds it.
+
+**Both unique constraints are partial indexes, because soft delete breaks
+uniqueness.** A soft-deleted user still occupies `UNIQUE (email)`, so they could
+never re-register with their own address — blocked by a row they cannot see.
+Scoping to `WHERE deleted_at IS NULL` frees the value. This applies to every
+unique constraint on a soft-deleted table.
+
+**Soft delete kept deliberately, with a known cost.** It is the one arguably
+over-engineered column here: it adds `WHERE deleted_at IS NULL` to every query
+and forces the partial indexes above. Kept because it is near-universal in
+production codebases and it is a pattern worth learning. Hard delete remains the
+GDPR erasure path and cascades everything away.
+
+**No `password_hash`.** The provider owns credentials; we never see them.
 
 ---
 
