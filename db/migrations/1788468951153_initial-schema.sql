@@ -43,7 +43,6 @@ CREATE TABLE sessions (
   )
 );
 
-
 CREATE UNIQUE INDEX uq_sessions_one_active_per_user
   ON sessions (user_id)
   WHERE status = 'in_progress' AND deleted_at IS NULL;
@@ -53,7 +52,7 @@ CREATE INDEX idx_sessions_user_created
   WHERE deleted_at IS NULL;
 -- Down Migration
 
-DROP TABLE sessions;
+DROP TABLE sessions
 DROP TABLE users;
 
 
