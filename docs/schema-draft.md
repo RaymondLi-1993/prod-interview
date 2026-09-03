@@ -305,8 +305,8 @@ CREATE INDEX idx_messages_stage_created
 data and differ only in who spoke, so splitting them would make "give me the
 transcript in order" a `UNION` plus a sort instead of one indexed read.
 
-**The FK points at `stage_id`, not `session_id`.** Access pattern #2 is *all
-messages for a stage, in order*. Stages already belong to sessions, so the
+**The FK points at `stage_id`, not `session_id`.** Access pattern #2 is _all
+messages for a stage, in order_. Stages already belong to sessions, so the
 session is always reachable through the stage — storing `session_id` too would
 be a duplicated fact that can drift.
 
@@ -317,7 +317,7 @@ from both parties.
 
 **Row order is never inherent.** A `SELECT` without `ORDER BY` may return rows
 in any order, and it changes as rows are updated or the table is vacuumed. Small
-tables often *look* ordered, which is what makes this a trap. Ordering is always
+tables often _look_ ordered, which is what makes this a trap. Ordering is always
 explicit.
 
 **`ORDER BY created_at, id` rather than a `seq` column.** Two messages can share

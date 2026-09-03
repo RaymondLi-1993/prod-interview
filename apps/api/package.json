@@ -1,0 +1,14 @@
+{
+  "name": "@prod-interview/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prod-interview/shared": "*",
+    "zod": "^4.5.4"
+  }
+}
