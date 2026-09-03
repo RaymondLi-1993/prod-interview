@@ -182,8 +182,20 @@ ordering, keyset pagination can silently skip or repeat rows.
 **No standalone FK index on `user_id`** — the composite index already leads with
 it, and Postgres can use any leftmost prefix.
 
-**`updated_at` needs a trigger.** `DEFAULT now()` only fires on insert. One
-shared trigger function, written in the first migration.
+**`updated_at` is maintained in the application layer, not by a trigger.**
+`DEFAULT now()` only fires on insert, so something must set it on every update.
+A `BEFORE UPDATE` trigger would be automatic and unbypassable; it was rejected
+because a trigger is action-at-a-distance — a column changes and nothing in the
+codebase explains why. Instead every `UPDATE` composes its SET clause through a
+shared helper that appends `updated_at = now()`.
+
+Accepted cost: the helper only covers writes that go through application code.
+Migrations, backfills, and manual psql sessions bypass it and leave
+`updated_at` stale. Judged acceptable, since those are exactly the moments the
+column matters least.
+
+`now()` is always evaluated server-side — never send a timestamp from Node, or
+the recorded value is the application server's clock rather than the database's.
 
 ---
 

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@prod-interview/shared": "*",
+    "pg": "^8.23.0",
     "zod": "^4.5.4"
   }
 }
