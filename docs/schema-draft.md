@@ -26,7 +26,7 @@ Method used for every table:
 | `users`              | ✅ designed |
 | `sessions`           | ✅ designed |
 | `session_stages`     | ✅ designed |
-| `messages`           | not started |
+| `messages`           | ✅ designed |
 | `problems`           | not started |
 | `coding_submissions` | not started |
 | `session_reports`    | not started |
@@ -277,3 +277,61 @@ unique index, so `UNIQUE (session_id, position)` already serves both
 leftmost prefix. Only one index needs adding — and like its counterpart on
 `sessions`, it does double duty as both the "resume where they left off" lookup
 and the constraint making two active stages impossible.
+
+---
+
+## `messages`
+
+**One row = one message in the conversation, sent by either the candidate or
+the interviewer.**
+
+```sql
+CREATE TABLE messages (
+  id          uuid PRIMARY KEY,
+  stage_id    uuid NOT NULL REFERENCES session_stages(id) ON DELETE CASCADE,
+  role        text NOT NULL CHECK (role IN ('interviewer','candidate')),
+  content     text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_messages_stage_created
+  ON messages (stage_id, created_at, id);
+```
+
+### Decisions
+
+**One table for both speakers, distinguished by `role`.** Not
+`interviewer_messages` and `candidate_messages`. They hold the same shape of
+data and differ only in who spoke, so splitting them would make "give me the
+transcript in order" a `UNION` plus a sort instead of one indexed read.
+
+**The FK points at `stage_id`, not `session_id`.** Access pattern #2 is *all
+messages for a stage, in order*. Stages already belong to sessions, so the
+session is always reachable through the stage — storing `session_id` too would
+be a duplicated fact that can drift.
+
+**No `user_id`.** Derivable via
+`messages.stage_id → session_stages.session_id → sessions.user_id`. `role` is
+not derivable and therefore earns its column: the same stage holds messages
+from both parties.
+
+**Row order is never inherent.** A `SELECT` without `ORDER BY` may return rows
+in any order, and it changes as rows are updated or the table is vacuumed. Small
+tables often *look* ordered, which is what makes this a trap. Ordering is always
+explicit.
+
+**`ORDER BY created_at, id` rather than a `seq` column.** Two messages can share
+a microsecond, and a tie resolves arbitrarily — so a tiebreaker is required. An
+explicit sequence column would also work and is stricter, but it means computing
+the next value on every insert, which is its own concurrency problem. UUIDv7 is
+time-ordered, so `id` breaks the tie in roughly the right direction for free. A
+`seq` column would only be worth it if messages needed reordering or guaranteed
+gapless numbering — neither applies to a transcript.
+
+**No `updated_at`** — messages are never edited. **No `deleted_at`** — they
+cascade away with their session.
+
+**Not included, deliberately:** token counts, which model produced an
+interviewer message, and whether a response was partially streamed. All are
+plausible later additions, and all are additive columns that cost nothing to
+defer. Revisit at Level 4 when the LLM adapter is real.
