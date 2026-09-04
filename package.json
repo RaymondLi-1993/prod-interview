@@ -18,7 +18,8 @@
     "migrate": "node --env-file=.env ./node_modules/node-pg-migrate/bin/node-pg-migrate.js --migrations-dir db/migrations --migration-file-language sql",
     "migrate:up": "npm run migrate -- up",
     "migrate:down": "npm run migrate -- down",
-    "migrate:create": "npm run migrate -- create"
+    "migrate:create": "npm run migrate -- create",
+    "seed": "node --env-file=.env db/seed.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
