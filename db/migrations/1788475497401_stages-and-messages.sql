@@ -36,4 +36,4 @@ CREATE INDEX idx_messages_stage_created
 -- Down Migration
 
 DROP TABLE messages;
-DROP TABLE session_stages;
+DROP TABLE session_stages;\

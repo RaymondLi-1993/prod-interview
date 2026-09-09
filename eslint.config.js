@@ -4,7 +4,9 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/*.js"],
+    // db/*.mjs are standalone scripts run directly by node, outside any
+    // tsconfig — type-aware linting has no project to check them against.
+    ignores: ["**/node_modules/**", "**/dist/**", "**/*.js", "**/*.mjs"],
   },
 
   js.configs.recommended,
