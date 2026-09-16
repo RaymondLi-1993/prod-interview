@@ -6,7 +6,7 @@ import type { Queryable } from "../src/db/types.js";
  * Runs a test body inside a transaction that is **always** rolled back.
  *
  * Integration tests need a real database — a mocked driver proves the SQL
- * string is unchanged, not that it is correct (CLAUDE.md section 7). But real
+ * string is unchanged, not that it is correct (see README: Testing). But real
  * writes would leave rows behind, so every test gets a transaction that is
  * discarded whether it passes or fails.
  *

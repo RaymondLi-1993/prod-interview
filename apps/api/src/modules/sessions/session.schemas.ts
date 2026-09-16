@@ -53,7 +53,7 @@ export const sessionRowSchema = z
 
 /**
  * The domain object every layer above the repository sees.
- * No snake_case escapes the repository (CLAUDE.md section 6).
+ * No snake_case escapes the repository (see README: Design notes).
  */
 export type Session = z.output<typeof sessionRowSchema>;
 

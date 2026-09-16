@@ -17,16 +17,28 @@ const SEED_EMAIL = "dev@prod-interview.local";
 
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
 
-/** Stage sequence is fixed (CLAUDE.md section 2). */
+/** Stage sequence is fixed (see README). */
 const STAGE_KINDS = ["introduction", "coding", "system_design", "behavioral"];
 
 /** The introduction stage is finished; the coding stage is where we resume. */
 const TRANSCRIPT = [
-  ["interviewer", "Hi Raymond — thanks for making the time. To start, tell me a bit about your background."],
-  ["candidate", "Sure. I'm a frontend engineer with about three and a half years of experience, mostly React and TypeScript. Lately I've been moving toward backend work."],
+  [
+    "interviewer",
+    "Hi Raymond — thanks for making the time. To start, tell me a bit about your background.",
+  ],
+  [
+    "candidate",
+    "Sure. I'm a frontend engineer with about three and a half years of experience, mostly React and TypeScript. Lately I've been moving toward backend work.",
+  ],
   ["interviewer", "What pulled you in that direction?"],
-  ["candidate", "I kept hitting the edges of what I could reason about. I could build the UI, but I couldn't explain why an endpoint was slow or how the data was actually modelled underneath."],
-  ["interviewer", "That's a good instinct. Let's put it to work — we'll move on to a coding problem next."],
+  [
+    "candidate",
+    "I kept hitting the edges of what I could reason about. I could build the UI, but I couldn't explain why an endpoint was slow or how the data was actually modelled underneath.",
+  ],
+  [
+    "interviewer",
+    "That's a good instinct. Let's put it to work — we'll move on to a coding problem next.",
+  ],
 ];
 
 async function main() {

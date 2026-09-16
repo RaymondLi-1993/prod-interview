@@ -4,9 +4,16 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    // db/*.mjs are standalone scripts run directly by node, outside any
-    // tsconfig — type-aware linting has no project to check them against.
-    ignores: ["**/node_modules/**", "**/dist/**", "**/*.js", "**/*.mjs"],
+    // db/*.mjs are standalone scripts run directly by node, and
+    // vitest.config.ts is tooling config — neither belongs to a tsconfig
+    // project, so type-aware linting has nothing to check them against.
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/*.js",
+      "**/*.mjs",
+      "vitest.config.ts",
+    ],
   },
 
   js.configs.recommended,
@@ -20,7 +27,7 @@ export default tseslint.config(
       },
     },
     rules: {
-      // CLAUDE.md section 4: no `any`, no non-null assertions.
+      // Project rule: no `any`, no non-null assertions.
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-non-null-assertion": "error",
 

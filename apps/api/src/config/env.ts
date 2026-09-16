@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 /**
- * The single place `process.env` may be read (CLAUDE.md section 10).
+ * The single place `process.env` may be read. Secrets are always accessed
+ * through this validated module, never via bare `process.env` elsewhere.
  *
  * Parsing happens once, at import time. A missing or malformed variable
  * crashes the process on startup rather than surfacing as an undefined
@@ -16,7 +17,7 @@ const envSchema = z.object({
 
   // Session pooler connection string, not the transaction pooler:
   // this is a long-lived process managing its own pg.Pool.
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.url(),
 
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])

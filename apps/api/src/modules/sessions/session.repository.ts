@@ -7,7 +7,7 @@ import {
 } from "./session.schemas.js";
 
 /**
- * SQL, and only SQL (CLAUDE.md section 4).
+ * SQL, and only SQL (see README: Architecture).
  *
  * No business logic, no branching on domain rules, no knowledge that HTTP
  * exists. Every method takes a `Queryable` as its first argument so it works
@@ -17,7 +17,7 @@ import {
  * callers receive validated camelCase domain objects and never see a raw row.
  */
 
-/** Explicit column list — never `SELECT *` (CLAUDE.md section 6). */
+/** Explicit column list — never `SELECT *` (see README: Design notes). */
 const COLUMNS = `
   id, user_id, track, difficulty, status,
   ended_at, created_at, updated_at, deleted_at

@@ -5,7 +5,7 @@ import type { Queryable } from "../../db/types.js";
 import * as sessionRepository from "./session.repository.js";
 
 /**
- * Integration tests: real SQL against a real database (CLAUDE.md section 7).
+ * Integration tests: real SQL against a real database (see README: Testing).
  *
  * Each test runs in a transaction that is rolled back, so tests can create
  * whatever they need and leave nothing behind.
