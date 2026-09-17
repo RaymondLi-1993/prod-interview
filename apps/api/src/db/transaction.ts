@@ -1,5 +1,5 @@
-import { pool } from "./pool.js";
-import type { Queryable } from "./types.js";
+import { pool } from "./pool.ts";
+import type { Queryable } from "./types.ts";
 
 /**
  * Runs `fn` inside a single transaction.

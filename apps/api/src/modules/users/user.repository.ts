@@ -1,5 +1,5 @@
-import type { Queryable } from "../../db/types.js";
-import { type User, type Providers, userSchema } from "./user.schemas.js";
+import type { Queryable } from "../../db/types.ts";
+import { type User, type Providers, userSchema } from "./user.schemas.ts";
 
 export interface CreateUser {
   id: string;

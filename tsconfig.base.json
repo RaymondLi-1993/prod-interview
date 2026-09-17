@@ -18,6 +18,11 @@
     "noUnusedParameters": true,
     "verbatimModuleSyntax": true,
 
+    // Node strips types and runs the .ts files directly, so imports name the
+    // real file rather than a .js output that never exists.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+
     // We typecheck only; Node strips types at runtime.
     "noEmit": true,
     "isolatedModules": true,

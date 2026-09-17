@@ -1,5 +1,5 @@
 import pg from "pg";
-import { env } from "../config/env.js";
+import { env } from "../config/env.ts";
 
 /**
  * The single connection pool for the process.

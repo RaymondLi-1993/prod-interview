@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
-import { closeTestPool, withRollback } from "../../../test/db.js";
-import type { Queryable } from "../../db/types.js";
-import * as sessionRepository from "./session.repository.js";
+import { closeTestPool, withRollback } from "../../../test/db.ts";
+import type { Queryable } from "../../db/types.ts";
+import * as sessionRepository from "./session.repository.ts";
 
 /**
  * Integration tests: real SQL against a real database (see README: Testing).

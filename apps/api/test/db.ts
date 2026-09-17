@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
-import { pool } from "../src/db/pool.js";
-import type { Queryable } from "../src/db/types.js";
+import { pool } from "../src/db/pool.ts";
+import type { Queryable } from "../src/db/types.ts";
 
 /**
  * Runs a test body inside a transaction that is **always** rolled back.

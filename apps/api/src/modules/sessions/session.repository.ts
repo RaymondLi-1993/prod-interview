@@ -1,10 +1,10 @@
-import type { Queryable } from "../../db/types.js";
+import type { Queryable } from "../../db/types.ts";
 import {
   sessionRowSchema,
   type Difficulty,
   type Session,
   type Track,
-} from "./session.schemas.js";
+} from "./session.schemas.ts";
 
 /**
  * SQL, and only SQL (see README: Architecture).
