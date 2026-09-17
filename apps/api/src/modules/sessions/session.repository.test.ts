@@ -217,7 +217,29 @@ describe("sessionRepository.findActiveByUserId", () => {
   //
   //   Then prove it works: delete `AND status = 'in_progress'` from
   //   findActiveByUserId and re-run. This test must fail. Put it back.
-  it.todo("returns null when every session has ended");
+  it("returns null when every session has ended", () =>
+    withRollback(async (db) => {
+      const userId = await insertUser(db);
+
+      const active = await sessionRepository.create(db, {
+        id: randomUUID(),
+        userId,
+        track: "backend",
+        difficulty: "hard",
+      });
+
+      expect(
+        await sessionRepository.findActiveByUserId(db, userId),
+      ).not.toBeNull();
+
+      await db.query(
+        `UPDATE sessions SET status = 'completed', ended_at = now() WHERE id = $1`,
+        [active.id],
+      );
+
+      const found = await sessionRepository.findActiveByUserId(db, userId);
+      expect(found).toBeNull();
+    }));
 });
 
 describe("sessionRepository.listByUserId", () => {
@@ -253,7 +275,18 @@ describe("sessionRepository.listByUserId", () => {
   //            every row's userId matches.
   //   This is the test that catches a missing `user_id = $1`, which would
   //   otherwise leak one user's history to another.
-  it.todo("excludes other users' sessions");
+  it("excludes other users' sessions", () =>
+    withRollback(async (db) => {
+      const userId = await insertUser(db);
+      const userId2 = await insertUser(db);
+
+      await insertSessions(db, userId, 2);
+      await insertSessions(db, userId2, 3);
+
+      const page = await sessionRepository.listByUserId(db, userId, 10);
+      expect(page).toHaveLength(2);
+      expect(page.every((s) => s.userId === userId)).toBe(true);
+    }));
 
   // TODO(raymond) #5 — keyset pagination. Hardest, and the most valuable.
   //   Arrange: 5 sessions for one user.
