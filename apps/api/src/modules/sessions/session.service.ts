@@ -1,21 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../../db/pool.ts";
 import { withTransaction } from "../../db/transaction.ts";
-import { ConflictError } from "../../errors/AppError.ts";
+import { ConflictError, NotFoundError } from "../../errors/AppError.ts";
 import type { Stage } from "../stages/stage.schemas.ts";
 import * as sessionRepository from "./session.repository.ts";
 import * as stageRepository from "../stages/stage.repository.ts";
 import type { Difficulty, Session, Track } from "./session.schemas.ts";
-
-/*
- * Imports the TODOs below will need — add them as you go, or let your editor
- * auto-import:
- *
- *   import { randomUUID } from "node:crypto";
- *   import { withTransaction } from "../../db/transaction.ts";
- *   import { ConflictError, NotFoundError } from "../../errors/AppError.ts";
- *   import * as stageRepository from "../stages/stage.repository.ts";
- */
 
 /**
  * Business logic for interview sessions.
@@ -100,16 +90,15 @@ export async function getSession(
   sessionId: string,
   userId: string,
 ): Promise<SessionWithStages> {
-  // TODO(raymond): fetch the session, verify ownership, fetch its stages.
-  //
-  //   - `sessionRepository.findById(pool, sessionId)` returns `Session | null`
-  //   - if it is null, or `session.userId` is not this user, what do you throw?
-  //     Careful: 403 confirms the resource exists, which lets someone
-  //     enumerate ids. See the note on NotFoundError in errors/AppError.ts.
-  //   - both cases should be indistinguishable from outside.
-  //
-  //   - then `stageRepository.listBySessionId(pool, sessionId)`.
-  throw new Error("not implemented");
+  const session = await sessionRepository.findById(pool, sessionId);
+
+  if (!session || session.userId !== userId) {
+    throw new NotFoundError("Session", sessionId);
+  }
+
+  const stages = await stageRepository.listBySessionId(pool, sessionId);
+
+  return { session, stages };
 }
 
 /**
