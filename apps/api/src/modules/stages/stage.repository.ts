@@ -80,3 +80,31 @@ export async function findActiveBySessionId(
 
   return rowCount ? stageRowSchema.parse(rows[0]) : null;
 }
+
+/**
+ * Activates the stage at `position` within a session.
+ *
+ * Guarded on `status = 'pending'`, so a completed stage cannot be reopened and
+ * a repeated call is a no-op. Returns null when no pending stage sits at that
+ * position — which is how the caller learns the interview has no further
+ * stages.
+ *
+ * If another stage is still active, `uq_stages_one_active_per_session` rejects
+ * this with 23505 rather than allowing two.
+ */
+export async function activateStage(
+  db: Queryable,
+  sessionId: string,
+  position: number,
+): Promise<Stage | null> {
+  const { rows, rowCount } = await db.query(
+    `UPDATE session_stages
+       SET status = 'active', started_at = now(), updated_at = now()
+     WHERE session_id = $1 AND position = $2 AND status = 'pending' 
+     RETURNING ${COLUMNS}
+     `,
+    [sessionId, position],
+  );
+
+  return rowCount ? stageRowSchema.parse(rows[0]) : null;
+}

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../../db/pool.ts";
 import { withTransaction } from "../../db/transaction.ts";
+import type { Queryable } from "../../db/types.ts";
 import { ConflictError, NotFoundError } from "../../errors/AppError.ts";
 import type { Stage } from "../stages/stage.schemas.ts";
 import * as sessionRepository from "./session.repository.ts";
@@ -35,6 +36,35 @@ export function isUniqueViolation(err: unknown): boolean {
     "code" in err &&
     err.code === UNIQUE_VIOLATION
   );
+}
+
+/**
+ * Loads a session, or throws if it does not exist **or does not belong to this
+ * user**. Both cases raise the same `NotFoundError`, so a caller cannot tell a
+ * real id from a fake one by comparing responses.
+ *
+ * Every entry point that touches a session goes through here. Duplicating this
+ * check is how one endpoint eventually ships without it — a data leak, not a
+ * style problem.
+ *
+ * Takes a `Queryable` so it works inside a transaction: when a read informs a
+ * later write, both belong to the same snapshot.
+ *
+ * Deliberately does **not** check status. Viewing a finished session is legal;
+ * advancing one is not. That rule belongs to the caller that has it.
+ */
+async function loadOwnedSession(
+  db: Queryable,
+  sessionId: string,
+  userId: string,
+): Promise<Session> {
+  const session = await sessionRepository.findById(db, sessionId);
+
+  if (!session || session.userId !== userId) {
+    throw new NotFoundError("Session", sessionId);
+  }
+
+  return session;
 }
 
 /**
@@ -90,12 +120,7 @@ export async function getSession(
   sessionId: string,
   userId: string,
 ): Promise<SessionWithStages> {
-  const session = await sessionRepository.findById(pool, sessionId);
-
-  if (!session || session.userId !== userId) {
-    throw new NotFoundError("Session", sessionId);
-  }
-
+  const session = await loadOwnedSession(pool, sessionId, userId);
   const stages = await stageRepository.listBySessionId(pool, sessionId);
 
   return { session, stages };
@@ -110,17 +135,35 @@ export async function advanceSession(
   sessionId: string,
   userId: string,
 ): Promise<SessionWithStages> {
-  // TODO(raymond): the state machine. Leave this until createSession and
-  // getSession are working and tested.
+  // TODO(raymond): the state machine.
   //
-  //   - which transitions are legal, and which must be rejected?
-  //   - advancing a session that is already completed → which error?
-  //   - two concurrent advance requests: what stops both from activating the
-  //     same next stage? (uq_stages_one_active_per_session, Postgres 23505)
-  //   - completing the last stage should also end the session. Remember
-  //     chk_sessions_ended_at requires ended_at whenever status is not
-  //     'in_progress'.
-  //   - all of it in one transaction.
+  // Everything below runs inside ONE withTransaction — the reads decide the
+  // writes, so they need the same snapshot, and the writes must land together.
+  //
+  //   GUARDS
+  //   1. loadOwnedSession(txConnection, sessionId, userId)
+  //   2. session.status must be 'in_progress' — otherwise ConflictError
+  //      ("this session has already ended")
+  //   3. stageRepository.findActiveBySessionId(txConnection, sessionId)
+  //      null → ConflictError; there is nothing to advance
+  //
+  //   WRITES
+  //   4. completeStage(txConnection, active.id)
+  //   5. activateStage(txConnection, sessionId, active.position + 1)
+  //        returns a Stage → moved on, session stays in_progress
+  //        returns null    → that was the final stage, so the session ends:
+  //                          UPDATE sessions SET status='completed',
+  //                          ended_at=now(), updated_at=now() WHERE id=$1
+  //                          (chk_sessions_ended_at requires ended_at whenever
+  //                           status is not 'in_progress')
+  //
+  //   RETURN the fresh state: re-read the session if you ended it, plus
+  //   listBySessionId for the stages.
+  //
+  //   Then wrap the whole thing in try/catch like createSession: two
+  //   simultaneous advances both pass the guards, and the second one's
+  //   activateStage hits uq_stages_one_active_per_session → 23505 →
+  //   ConflictError.
   throw new Error("not implemented");
 }
 
