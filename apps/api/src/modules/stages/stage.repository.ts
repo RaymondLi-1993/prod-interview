@@ -108,3 +108,30 @@ export async function activateStage(
 
   return rowCount ? stageRowSchema.parse(rows[0]) : null;
 }
+
+/**
+ * Marks a stage completed and stamps `completed_at`.
+ *
+ * Addressed by primary key: the caller already holds the row from
+ * `findActiveBySessionId`, so re-finding it by (session_id, position) would
+ * open a window where "the active stage" could have moved.
+ *
+ * Guarded on `status = 'active'`, so a repeated request cannot rewrite
+ * `completed_at`. Returns null when nothing matched — the caller decides
+ * whether that is an error.
+ */
+export async function completeStage(
+  db: Queryable,
+  stageId: string,
+): Promise<Stage | null> {
+  const { rows, rowCount } = await db.query(
+    `UPDATE session_stages
+       SET status = 'completed', updated_at = now(), completed_at = now()
+     WHERE id = $1 AND status = 'active' 
+     RETURNING ${COLUMNS}
+     `,
+    [stageId],
+  );
+
+  return rowCount ? stageRowSchema.parse(rows[0]) : null;
+}
