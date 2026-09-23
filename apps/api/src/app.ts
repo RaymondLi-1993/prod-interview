@@ -2,6 +2,7 @@ import express from "express";
 import { requestId } from "./middleware/requestId.ts";
 import { devUser } from "./middleware/devUser.ts";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.ts";
+import { sessionRoutes } from "./modules/sessions/session.routes.ts";
 import { pool } from "./db/pool.ts";
 
 /**
@@ -39,8 +40,7 @@ export function createApp() {
 
   app.use(devUser);
 
-  // Routes mount here as modules gain them.
-  // app.use("/api/v1/sessions", sessionRoutes);
+  app.use("/api/v1/sessions", sessionRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
