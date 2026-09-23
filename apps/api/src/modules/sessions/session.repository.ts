@@ -119,3 +119,22 @@ export async function listByUserId(
 
   return rows.map((row) => sessionRowSchema.parse(row));
 }
+
+/**
+ * Soft-deleted rows are excluded here rather than by callers — forgetting
+ * `deleted_at IS NULL` once is a data leak, so it lives in the SQL.
+ */
+export async function endSession(
+  db: Queryable,
+  sessionId: string,
+): Promise<Session | null> {
+  const { rows, rowCount } = await db.query(
+    `UPDATE sessions
+        SET status = 'completed', ended_at = now(), updated_at = now()
+      WHERE id = $1 AND status = 'in_progress'
+     RETURNING ${COLUMNS}`,
+    [sessionId],
+  );
+
+  return rowCount ? sessionRowSchema.parse(rows[0]) : null;
+}

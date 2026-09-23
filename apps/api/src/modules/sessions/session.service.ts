@@ -135,36 +135,50 @@ export async function advanceSession(
   sessionId: string,
   userId: string,
 ): Promise<SessionWithStages> {
-  // TODO(raymond): the state machine.
-  //
-  // Everything below runs inside ONE withTransaction — the reads decide the
-  // writes, so they need the same snapshot, and the writes must land together.
-  //
-  //   GUARDS
-  //   1. loadOwnedSession(txConnection, sessionId, userId)
-  //   2. session.status must be 'in_progress' — otherwise ConflictError
-  //      ("this session has already ended")
-  //   3. stageRepository.findActiveBySessionId(txConnection, sessionId)
-  //      null → ConflictError; there is nothing to advance
-  //
-  //   WRITES
-  //   4. completeStage(txConnection, active.id)
-  //   5. activateStage(txConnection, sessionId, active.position + 1)
-  //        returns a Stage → moved on, session stays in_progress
-  //        returns null    → that was the final stage, so the session ends:
-  //                          UPDATE sessions SET status='completed',
-  //                          ended_at=now(), updated_at=now() WHERE id=$1
-  //                          (chk_sessions_ended_at requires ended_at whenever
-  //                           status is not 'in_progress')
-  //
-  //   RETURN the fresh state: re-read the session if you ended it, plus
-  //   listBySessionId for the stages.
-  //
-  //   Then wrap the whole thing in try/catch like createSession: two
-  //   simultaneous advances both pass the guards, and the second one's
-  //   activateStage hits uq_stages_one_active_per_session → 23505 →
-  //   ConflictError.
-  throw new Error("not implemented");
+  try {
+    return await withTransaction(async (txConnection) => {
+      let session = await loadOwnedSession(txConnection, sessionId, userId);
+      if (session.status !== "in_progress") {
+        throw new ConflictError("There was error with the session");
+      }
+
+      const active = await stageRepository.findActiveBySessionId(
+        txConnection,
+        sessionId,
+      );
+      if (!active) throw new ConflictError("No active session found");
+
+      // write
+      await stageRepository.completeStage(txConnection, active.id);
+
+      const next = await stageRepository.activateStage(
+        txConnection,
+        session.id,
+        active.position + 1,
+      );
+
+      if (!next) {
+        const ended = await sessionRepository.endSession(
+          txConnection,
+          sessionId,
+        );
+        if (ended) {
+          session = ended;
+        }
+      }
+
+      const stages = await stageRepository.listBySessionId(
+        txConnection,
+        sessionId,
+      );
+
+      return { session, stages };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err))
+      throw new ConflictError("There was an error with updating the session");
+    throw err;
+  }
 }
 
 /**

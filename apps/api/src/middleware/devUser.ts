@@ -30,7 +30,11 @@ const DEV_EMAIL = "dev@prod-interview.local";
 
 let cachedUserId: string | undefined;
 
-export async function devUser(req: Request, _res: Response, next: NextFunction) {
+export async function devUser(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
   try {
     cachedUserId ??= await resolveDevUserId();
     req.userId = cachedUserId;

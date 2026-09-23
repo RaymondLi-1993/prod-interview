@@ -44,7 +44,9 @@ export class NotFoundError extends AppError {
   readonly type = "not-found";
 
   constructor(resource: string, id?: string) {
-    super(id ? `${resource} ${id} was not found.` : `${resource} was not found.`);
+    super(
+      id ? `${resource} ${id} was not found.` : `${resource} was not found.`,
+    );
   }
 }
 
