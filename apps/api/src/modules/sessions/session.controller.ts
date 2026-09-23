@@ -18,12 +18,6 @@ import type {
  * is why the service re-checks ownership rather than trusting a path param.
  */
 
-// TODO(raymond): POST /api/v1/sessions
-//   - the validated body is on `req.body` (cast it to CreateSessionBody)
-//   - call sessionService.createSession with req.userId plus track/difficulty
-//   - which status code does a creation return? and which header should
-//     accompany it, per the API conventions?
-//   - res.status(...).location(...).json(...) chains.
 export async function create(req: Request, res: Response) {
   const { track, difficulty } = req.body as CreateSessionBody;
   const result = await sessionService.createSession({
@@ -38,18 +32,11 @@ export async function create(req: Request, res: Response) {
     .json(result);
 }
 
-// TODO(raymond): GET /api/v1/sessions/:sessionId
-//   - `req.params` holds the validated param (cast to SessionIdParams)
-//   - one call, one res.json(...). Nothing else.
-//   - what happens if the service throws NotFoundError? Do you need to
-//     handle it here?
 export async function getById(req: Request, res: Response) {
   const { sessionId } = req.params as SessionIdParams;
   res.json(await sessionService.getSession(sessionId, req.userId));
 }
 
-// TODO(raymond): POST /api/v1/sessions/:sessionId/advance
-//   Nearly identical to getById — different service call.
 export async function advance(req: Request, res: Response) {
   const { sessionId } = req.params as SessionIdParams;
   res.json(await sessionService.advanceSession(sessionId, req.userId));

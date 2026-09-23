@@ -168,11 +168,6 @@ describe("sessionRepository.findActiveByUserId", () => {
     }));
 
   // ---- START HERE -----------------------------------------------------
-  // TODO(raymond) #1 — the simplest test in the file.
-  //   Arrange: a user, and nothing else.
-  //   Act:     findActiveByUserId
-  //   Assert:  null
-  //   Closest example: "returns null when the id is unknown", above.
   it("returns null when the user has no session", () =>
     withRollback(async (db) => {
       const userId = await insertUser(db);
@@ -181,11 +176,6 @@ describe("sessionRepository.findActiveByUserId", () => {
       expect(found).toBeNull();
     }));
 
-  // TODO(raymond) #2 — soft delete.
-  //   Arrange: a user with ONE in-progress session, then set its deleted_at.
-  //   Assert:  null — the session is active but deleted.
-  //   Closest example: "hides soft-deleted sessions", above. Nearly identical.
-  //   Ask yourself: which half of the WHERE clause does this one pin down?
   it("ignores a soft-deleted in-progress session", () =>
     withRollback(async (db) => {
       const userId = await insertUser(db);
@@ -205,18 +195,6 @@ describe("sessionRepository.findActiveByUserId", () => {
       expect(found).toBeNull();
     }));
 
-  // TODO(raymond) #3 — the one that matters most.
-  //   The passing test above does NOT catch a missing status filter: remove
-  //   `status = 'in_progress'` from the query and it still passes, because
-  //   both rows come back and rows[0] happens to be the active one.
-  //
-  //   Arrange: a user whose sessions have ALL ended (create two, complete
-  //            both — the loop in "allows a new session once the previous
-  //            one has ended" shows how to complete one).
-  //   Assert:  null.
-  //
-  //   Then prove it works: delete `AND status = 'in_progress'` from
-  //   findActiveByUserId and re-run. This test must fail. Put it back.
   it("returns null when every session has ended", () =>
     withRollback(async (db) => {
       const userId = await insertUser(db);
@@ -268,13 +246,6 @@ describe("sessionRepository.listByUserId", () => {
       expect(page.map((s) => s.id)).toEqual([...ids].reverse());
     }));
 
-  // TODO(raymond) #4 — ownership.
-  //   Arrange: TWO users, each with sessions (call insertUser twice).
-  //   Act:     list one user's sessions.
-  //   Assert:  only their rows come back — check both the count and that
-  //            every row's userId matches.
-  //   This is the test that catches a missing `user_id = $1`, which would
-  //   otherwise leak one user's history to another.
   it("excludes other users' sessions", () =>
     withRollback(async (db) => {
       const userId = await insertUser(db);
@@ -288,19 +259,5 @@ describe("sessionRepository.listByUserId", () => {
       expect(page.every((s) => s.userId === userId)).toBe(true);
     }));
 
-  // TODO(raymond) #5 — keyset pagination. Hardest, and the most valuable.
-  //   Arrange: 5 sessions for one user.
-  //   Act:     fetch a page of 2. Then take the LAST row of that page and
-  //            pass { createdAt, id } as the cursor to fetch 2 more.
-  //   Assert:  page two continues exactly where page one stopped — nothing
-  //            repeated, nothing skipped.
-  //
-  //   Hints:
-  //     - insertSessions returns ids oldest → newest
-  //     - the query returns newest first, so [...ids].reverse() is the
-  //       expected full order
-  //     - page one should equal the first 2 of that; page two the next 2
-  //     - noUncheckedIndexedAccess is on, so `page[page.length - 1]` is
-  //       possibly-undefined — narrow it before using it
   it.todo("paginates by cursor without repeating or skipping rows");
 });

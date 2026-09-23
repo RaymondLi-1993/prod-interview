@@ -44,11 +44,6 @@ export const cursorSchema = z.string().transform((value, ctx) => {
   }
 });
 
-// TODO(raymond): the query string for GET /api/v1/sessions.
-//   - `limit`: arrives as a string ("20"), needs to be a number.
-//     z.coerce.number() handles that. Cap it — an endpoint that can return
-//     everything is a liability. The API conventions say 100.
-//   - `cursor`: optional, and the decoding is below.
 export const listSessionsQuerySchema = z.object({
   cursor: cursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
