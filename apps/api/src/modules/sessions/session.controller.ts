@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import * as sessionService from "./session.service.ts";
+import { sessionService } from "./session.service.ts";
 import { encodeCursor } from "./session.http.ts";
 import type {
   CreateSessionBody,
