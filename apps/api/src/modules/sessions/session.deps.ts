@@ -34,7 +34,10 @@ export interface SessionRepo {
 export interface StageRepo {
   createForSession(db: Queryable, sessionId: string): Promise<Stage[]>;
   listBySessionId(db: Queryable, sessionId: string): Promise<Stage[]>;
-  findActiveBySessionId(db: Queryable, sessionId: string): Promise<Stage | null>;
+  findActiveBySessionId(
+    db: Queryable,
+    sessionId: string,
+  ): Promise<Stage | null>;
   completeStage(db: Queryable, stageId: string): Promise<Stage | null>;
   activateStage(
     db: Queryable,
