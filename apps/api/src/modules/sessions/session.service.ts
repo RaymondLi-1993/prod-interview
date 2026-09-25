@@ -97,7 +97,9 @@ export function createSessionService(deps: SessionServiceDeps) {
       input.userId,
     );
     if (isExisting) {
-      throw new ConflictError("A session already exists");
+      throw new ConflictError(
+        "You already have an interview in progress. Finish or end it before starting another.",
+      );
     }
 
     try {
@@ -117,7 +119,9 @@ export function createSessionService(deps: SessionServiceDeps) {
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ConflictError("You already have an interview in progress");
+        throw new ConflictError(
+          "You already have an interview in progress. Finish or end it before starting another.",
+        );
       }
       throw err;
     }
@@ -148,14 +152,22 @@ export function createSessionService(deps: SessionServiceDeps) {
       return await withTransaction(async (txConnection) => {
         let session = await loadOwnedSession(txConnection, sessionId, userId);
         if (session.status !== "in_progress") {
-          throw new ConflictError("There was error with the session");
+          throw new ConflictError(
+            "This interview has already ended and cannot be advanced.",
+          );
         }
 
         const active = await stageRepository.findActiveBySessionId(
           txConnection,
           sessionId,
         );
-        if (!active) throw new ConflictError("No active session found");
+        if (!active) {
+          // Should be unreachable: an in-progress session always has exactly
+          // one active stage, per uq_stages_one_active_per_session.
+          throw new ConflictError(
+            "This interview has no stage in progress. Please reload and try again.",
+          );
+        }
 
         // write
         await stageRepository.completeStage(txConnection, active.id);
@@ -185,7 +197,11 @@ export function createSessionService(deps: SessionServiceDeps) {
       });
     } catch (err) {
       if (isUniqueViolation(err))
-        throw new ConflictError("There was an error with updating the session");
+        // Another request advanced this session first; its write won the race
+        // on uq_stages_one_active_per_session.
+        throw new ConflictError(
+          "This interview was already advanced. Please reload to see the current stage.",
+        );
       throw err;
     }
   }
