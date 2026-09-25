@@ -11,6 +11,7 @@
     "@prod-interview/shared": "*",
     "express": "^5.2.1",
     "pg": "^8.23.0",
+    "uuid": "^14.0.2",
     "zod": "^4.5.4"
   }
 }
