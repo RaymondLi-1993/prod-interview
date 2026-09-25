@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { pool } from "../../db/pool.ts";
+import { uuidv7 } from "../../db/uuid.ts";
 import { withTransaction as withTransactionImpl } from "../../db/transaction.ts";
 import type { Queryable } from "../../db/types.ts";
 import { ConflictError, NotFoundError } from "../../errors/AppError.ts";
@@ -105,7 +105,7 @@ export function createSessionService(deps: SessionServiceDeps) {
     try {
       return await withTransaction(async (txConnection) => {
         const session = await sessionRepository.create(txConnection, {
-          id: randomUUID(),
+          id: uuidv7(),
           userId: input.userId,
           track: input.track,
           difficulty: input.difficulty,

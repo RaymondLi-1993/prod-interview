@@ -17,6 +17,10 @@ declare global {
  *
  * This is the thing that makes a production bug report actionable: a user
  * quotes the id from an error, and it matches every log line for that request.
+ *
+ * Deliberately `randomUUID()` (v4) rather than the `uuidv7()` used for primary
+ * keys: request ids are never stored, indexed, or ordered, so the time-ordered
+ * prefix buys nothing here.
  */
 export function requestId(req: Request, res: Response, next: NextFunction) {
   const inbound = req.get("x-request-id");

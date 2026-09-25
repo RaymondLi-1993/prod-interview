@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { Queryable } from "../../db/types.ts";
+import { uuidv7 } from "../../db/uuid.ts";
 import { STAGE_KINDS, stageRowSchema, type Stage } from "./stage.schemas.ts";
 
 /** SQL only. Same rules as session.repository.ts. */
@@ -25,7 +25,7 @@ export async function createForSession(
   const tuples = STAGE_KINDS.map((kind, i) => {
     const base = i * 6;
     values.push(
-      randomUUID(),
+      uuidv7(),
       sessionId,
       kind,
       i + 1,
