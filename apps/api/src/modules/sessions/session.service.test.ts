@@ -91,6 +91,7 @@ describe("createSession", () => {
   it("translates a 23505 from create into ConflictError", async () => {
     const deps = createFakeDeps();
 
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- pg throws objects carrying a `code`, not Error instances
     deps.sessionRepository.create = () => Promise.reject({ code: "23505" });
 
     const service = createSessionService(deps);
@@ -118,7 +119,7 @@ describe("getSession", () => {
   });
 
   it("throws NotFoundError when the session does not exist", async () => {
-    const service = await createSessionService(createFakeDeps());
+    const service = createSessionService(createFakeDeps());
 
     await expect(service.getSession(randomUUID(), USER)).rejects.toBeInstanceOf(
       NotFoundError,
@@ -136,11 +137,6 @@ describe("getSession", () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe("advanceSession", () => {
-  // TODO(raymond) #5 — the happy path, middle of the interview.
-  //   Arrange: arrangeActiveSession() — introduction is active.
-  //   Act:     advanceSession
-  //   Assert:  introduction is completed with a completedAt; coding is active
-  //            with a startedAt; the session is still in_progress.
   it("completes the active stage and activates the next", async () => {
     const { session, service } = arrangeActiveSession();
 
@@ -153,52 +149,132 @@ describe("advanceSession", () => {
     expect(nextStage.stages[1]?.startedAt).not.toBeNull();
   });
 
-  // TODO(raymond) #6 — the final stage ends the interview.
-  //   Arrange: a session whose stages are all completed EXCEPT the last, which
-  //            is active. Build it by mapping over buildStageSet's result, or
-  //            call advanceSession three times first — either is fine.
-  //   Assert:  session.status is "completed", endedAt is a Date, and every
-  //            stage is completed.
-  it.todo("ends the session after the final stage completes");
+  it("ends the session after the final stage completes", async () => {
+    const { session, service } = arrangeActiveSession();
 
-  // TODO(raymond) #7 — guard: already finished.
-  //   Arrange: buildSession({ userId: USER, status: "completed" }).
-  //   Assert:  ConflictError.
-  it.todo("rejects advancing a session that has already ended");
+    // Walk the whole interview. Only the fourth advance matters: it completes
+    // the behavioral stage, finds no stage at position 5, and ends the session.
+    await service.advanceSession(session.id, USER);
+    await service.advanceSession(session.id, USER);
+    await service.advanceSession(session.id, USER);
+    const result = await service.advanceSession(session.id, USER);
 
-  // TODO(raymond) #8 — guard: nothing active.
-  //   Arrange: a session in_progress, but pass stages where none has
-  //            status "active" (map buildStageSet to all "pending").
-  //   Assert:  ConflictError. This is a corrupt state that should not occur,
-  //            which is exactly why it is worth pinning.
-  it.todo("rejects advancing when no stage is active");
+    expect(result.session.status).toBe("completed");
+    expect(result.session.endedAt).toBeInstanceOf(Date);
+    expect(result.stages).toHaveLength(4);
+    expect(result.stages.every((s) => s.status === "completed")).toBe(true);
+  });
 
-  // TODO(raymond) #9 — ownership.
-  //   Act as OTHER_USER against USER's session.
-  //   Assert:  NotFoundError — and nothing changed. Check the stages are
-  //            untouched afterwards, not just that it threw.
-  it.todo("another user cannot advance the session");
+  it("rejects advancing a session that has already ended", async () => {
+    const session = buildSession({ userId: USER, status: "completed" });
+    const service = createSessionService(
+      createFakeDeps({
+        sessions: [session],
+        stages: buildStageSet(session.id),
+      }),
+    );
 
-  // TODO(raymond) #10 — the concurrency branch.
-  //   Arrange: arrangeActiveSession(), then
-  //            deps.stageRepository.failNextActivateWith = { code: "23505" };
-  //   Assert:  ConflictError.
-  //   This is the second advance losing the race on
-  //   uq_stages_one_active_per_session. The fake makes it deterministic.
-  it.todo("translates a 23505 from activateStage into ConflictError");
+    await expect(
+      service.advanceSession(session.id, USER),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("rejects advancing when no stage is active", async () => {
+    // A corrupt state that should never occur — every stage pending, none
+    // active. Worth pinning precisely because it should be impossible: if the
+    // guard were missing, this would throw a confusing TypeError instead of a
+    // 409.
+    const session = buildSession({ userId: USER });
+    const stages = buildStageSet(session.id).map((s) => ({
+      ...s,
+      status: "pending" as const,
+    }));
+
+    const service = createSessionService(
+      createFakeDeps({ sessions: [session], stages }),
+    );
+
+    await expect(
+      service.advanceSession(session.id, USER),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("another user cannot advance the session", async () => {
+    const { session, deps, service } = arrangeActiveSession();
+
+    await expect(
+      service.advanceSession(session.id, OTHER_USER),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    // Throwing is not enough — nothing must have changed. Without this, a
+    // version that wrote first and checked ownership afterwards would pass.
+    const stages = await deps.stageRepository.listBySessionId(
+      deps.db,
+      session.id,
+    );
+    expect(stages[0]?.status).toBe("active");
+    expect(stages[0]?.completedAt).toBeNull();
+    expect(stages[1]?.status).toBe("pending");
+  });
+
+  it("translates a 23505 from activateStage into ConflictError", async () => {
+    const { session, deps, service } = arrangeActiveSession();
+
+    // Two concurrent advances: both pass the guards, then the second one's
+    // activateStage loses the race on uq_stages_one_active_per_session. The
+    // fake makes that deterministic — a real database could not.
+    deps.stageRepository.failNextActivateWith = { code: "23505" };
+
+    await expect(
+      service.advanceSession(session.id, USER),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
 describe("listSessions", () => {
-  // TODO(raymond) #11 — ordering and ownership.
-  //   Arrange: three sessions for USER and two for OTHER_USER. buildSession
-  //            gives each a later createdAt than the last, so they are
-  //            naturally ordered.
-  //   Assert:  USER gets exactly their three, newest first.
-  it.todo("returns only the user's own sessions, newest first");
+  it("returns only the user's own sessions, newest first", async () => {
+    // buildSession advances its clock, so each is created later than the last.
+    const mine = [
+      buildSession({ userId: USER }),
+      buildSession({ userId: USER }),
+      buildSession({ userId: USER }),
+    ];
+    const theirs = [
+      buildSession({ userId: OTHER_USER }),
+      buildSession({ userId: OTHER_USER }),
+    ];
 
-  // TODO(raymond) #12 — the limit.
-  //   Arrange: five sessions for USER. Act with limit 2.
-  //   Assert:  two rows come back.
-  it.todo("respects the limit");
+    const service = createSessionService(
+      createFakeDeps({ sessions: [...mine, ...theirs] }),
+    );
+
+    const result = await service.listSessions(USER, 10);
+
+    // Different counts on each side, so a missing owner filter would show up
+    // as 5 rather than 3.
+    expect(result).toHaveLength(3);
+    expect(result.every((s) => s.userId === USER)).toBe(true);
+    expect(result.map((s) => s.id)).toEqual(
+      [...mine].reverse().map((s) => s.id),
+    );
+  });
+
+  it("respects the limit", async () => {
+    const sessions = Array.from({ length: 5 }, () =>
+      buildSession({ userId: USER }),
+    );
+    const service = createSessionService(createFakeDeps({ sessions }));
+
+    const result = await service.listSessions(USER, 2);
+
+    expect(result).toHaveLength(2);
+    // The two newest, since the query orders newest first.
+    expect(result.map((s) => s.id)).toEqual(
+      [...sessions]
+        .reverse()
+        .slice(0, 2)
+        .map((s) => s.id),
+    );
+  });
 });
