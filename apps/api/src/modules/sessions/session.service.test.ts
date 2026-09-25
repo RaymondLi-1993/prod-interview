@@ -9,6 +9,8 @@ import {
   createFakeDeps,
 } from "../../../test/fakes.ts";
 import { createSessionService } from "./session.service.ts";
+import { randomUUID } from "node:crypto";
+import { ConflictError, NotFoundError } from "../../errors/AppError.ts";
 
 /**
  * Service unit tests — no database.
@@ -75,20 +77,32 @@ describe("createSession", () => {
     expect(stages.slice(1).every((s) => s.status === "pending")).toBe(true);
   });
 
-  // TODO(raymond) #1 — the pre-check.
-  //   Arrange: a session already in_progress for USER (buildSession defaults
-  //            to that status). Pass it via createFakeDeps({ sessions: [...] }).
-  //   Assert:  createSession rejects with ConflictError.
-  //   This is the friendly path — the check that runs before any write.
-  it.todo("rejects a second in-progress session for the same user");
+  it("rejects a second in-progress session for the same user", async () => {
+    const session = buildSession({ userId: USER, status: "in_progress" });
+    const service = createSessionService(
+      createFakeDeps({ sessions: [session] }),
+    );
 
-  // TODO(raymond) #2 — the race the pre-check cannot catch.
-  //   Two requests both find no active session, then the second insert hits
-  //   uq_sessions_one_active_per_user. Simulate it by making the repository
-  //   throw:  deps.sessionRepository.create = () => Promise.reject({ code: "23505" });
-  //   Assert:  ConflictError, not the raw Postgres error.
-  //   Against a real database this needed two genuinely concurrent requests.
-  it.todo("translates a 23505 from create into ConflictError");
+    await expect(service.createSession(session)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+  });
+
+  it("translates a 23505 from create into ConflictError", async () => {
+    const deps = createFakeDeps();
+
+    deps.sessionRepository.create = () => Promise.reject({ code: "23505" });
+
+    const service = createSessionService(deps);
+
+    await expect(
+      service.createSession({
+        userId: USER,
+        track: "react",
+        difficulty: "medium",
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -103,18 +117,21 @@ describe("getSession", () => {
     expect(result.stages.map((s) => s.position)).toEqual([1, 2, 3, 4]);
   });
 
-  // TODO(raymond) #3 — unknown id.
-  //   Arrange: empty deps. Act with randomUUID().
-  //   Assert:  NotFoundError.
-  it.todo("throws NotFoundError when the session does not exist");
+  it("throws NotFoundError when the session does not exist", async () => {
+    const service = await createSessionService(createFakeDeps());
 
-  // TODO(raymond) #4 — the security case.
-  //   Arrange: a session owned by USER. Act as OTHER_USER.
-  //   Assert:  NotFoundError — the SAME error as #3, so a caller cannot tell
-  //            a real id from a fake one by comparing responses.
-  //   Worth asserting both cases produce the same error type here, since that
-  //   equivalence is the whole point.
-  it.todo("throws NotFoundError when the session belongs to another user");
+    await expect(service.getSession(randomUUID(), USER)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("throws NotFoundError when the session belongs to another user", async () => {
+    const { session, service } = arrangeActiveSession();
+
+    await expect(
+      service.getSession(session.id, OTHER_USER),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -124,7 +141,17 @@ describe("advanceSession", () => {
   //   Act:     advanceSession
   //   Assert:  introduction is completed with a completedAt; coding is active
   //            with a startedAt; the session is still in_progress.
-  it.todo("completes the active stage and activates the next");
+  it("completes the active stage and activates the next", async () => {
+    const { session, service } = arrangeActiveSession();
+
+    const nextStage = await service.advanceSession(session.id, USER);
+
+    expect(nextStage.stages[0]?.status).toBe("completed");
+    expect(nextStage.stages[0]?.completedAt).not.toBeNull();
+    expect(nextStage.session.status).toBe("in_progress");
+    expect(nextStage.stages[1]?.status).toBe("active");
+    expect(nextStage.stages[1]?.startedAt).not.toBeNull();
+  });
 
   // TODO(raymond) #6 — the final stage ends the interview.
   //   Arrange: a session whose stages are all completed EXCEPT the last, which
