@@ -30,7 +30,14 @@ export async function create(
   db: Queryable,
   input: CreateMessageInput,
 ): Promise<Message> {
-  throw new Error("not implemented");
+  const { rows } = await db.query(
+    `INSERT INTO messages (id, stage_id, role, content)
+     VALUES ($1, $2, $3, $4)
+     RETURNING ${COLUMNS}`,
+    [input.id, input.stageId, input.role, input.content],
+  );
+
+  return messageRowSchema.parse(rows[0]);
 }
 
 // TODO(raymond): the transcript for one stage — access pattern #2.
@@ -47,7 +54,16 @@ export async function listByStageId(
   db: Queryable,
   stageId: string,
 ): Promise<Message[]> {
-  throw new Error("not implemented");
+  const { rows } = await db.query(
+    `
+        SELECT ${COLUMNS} FROM messages
+        WHERE stage_id = $1
+        ORDER BY created_at, id
+      `,
+    [stageId],
+  );
+
+  return rows.map((elem) => messageRowSchema.parse(elem));
 }
 
 // TODO(raymond): how many messages this stage has.
