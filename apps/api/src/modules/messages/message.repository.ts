@@ -22,10 +22,12 @@ export interface CreateMessageInput {
   content: string;
 }
 
-// TODO(raymond): insert a message and return it.
-//   Same shape as the other repositories: INSERT ... RETURNING ${COLUMNS},
-//   parameterized, then messageRowSchema.parse(rows[0]).
-//   Note there is no deleted_at or updated_at on this table.
+/**
+ * No explicit transaction: a single statement is already atomic. The `db`
+ * parameter is a `Queryable`, so the caller decides whether this runs inside
+ * one — and an interview turn deliberately does not, because that would hold a
+ * pooled connection open across the LLM call.
+ */
 export async function create(
   db: Queryable,
   input: CreateMessageInput,
@@ -40,16 +42,23 @@ export async function create(
   return messageRowSchema.parse(rows[0]);
 }
 
-// TODO(raymond): the transcript for one stage — access pattern #2.
-//
-//   SELECT by stage_id, and make the ordering explicit. Two things to decide:
-//     - which column(s) to ORDER BY
-//     - why `created_at` alone is not enough
-//
-//   The index is `idx_messages_stage_created (stage_id, created_at, id)`.
-//   Match it and Postgres does an index range scan instead of a sort.
-//
-//   Returns an array, so map + parse rather than a rowCount guard.
+/**
+ * The transcript for one stage, oldest first — access pattern #2.
+ *
+ * Matches `idx_messages_stage_created (stage_id, created_at, id)`: equality on
+ * the leading column seeks straight to this stage's block, and the rows are
+ * already in `created_at, id` order inside it, so there is no sort step.
+ * `stage_id` is absent from the ORDER BY on purpose — the WHERE has pinned it
+ * to one value, so it can no longer order anything.
+ *
+ * `id` as the tiebreaker only works because ids are UUIDv7. `now()` is
+ * evaluated once per transaction, so messages written together share a
+ * `created_at` and the ordering falls entirely to the key; a random v4 would
+ * put them in arbitrary order.
+ *
+ * Mapping rather than indexing means an empty stage returns `[]` instead of
+ * throwing — the normal state at the start of every stage.
+ */
 export async function listByStageId(
   db: Queryable,
   stageId: string,
@@ -64,20 +73,4 @@ export async function listByStageId(
   );
 
   return rows.map((elem) => messageRowSchema.parse(elem));
-}
-
-// TODO(raymond): how many messages this stage has.
-//
-//   The service needs to tell an empty stage from one mid-conversation — the
-//   LLM gets an opening prompt in the first case and the history in the second.
-//   Loading the whole transcript to call `.length` would work, but this is a
-//   count the database can do without sending rows.
-//
-//   Note: count(*) returns bigint, which `pg` gives you as a *string* to avoid
-//   precision loss. Cast it or convert it.
-export async function countByStageId(
-  db: Queryable,
-  stageId: string,
-): Promise<number> {
-  throw new Error("not implemented");
 }
