@@ -92,11 +92,11 @@ export function createSessionService(deps: SessionServiceDeps) {
     track: Track;
     difficulty: Difficulty;
   }): Promise<SessionWithStages> {
-    const isExisting = await sessionRepository.findActiveByUserId(
+    const existing = await sessionRepository.findActiveByUserId(
       db,
       input.userId,
     );
-    if (isExisting) {
+    if (existing) {
       throw new ConflictError(
         "You already have an interview in progress. Finish or end it before starting another.",
       );
@@ -169,7 +169,9 @@ export function createSessionService(deps: SessionServiceDeps) {
           );
         }
 
-        // write
+        // Complete first, then activate. The reverse order would briefly leave
+        // two active stages, which uq_stages_one_active_per_session rejects
+        // outright — so the sequence here is load-bearing, not stylistic.
         await stageRepository.completeStage(txConnection, active.id);
 
         const next = await stageRepository.activateStage(
