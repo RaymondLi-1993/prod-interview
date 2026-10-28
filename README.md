@@ -4,22 +4,24 @@ An AI-powered mock interview platform. A session runs as a staged interview —
 introduction → coding → system design → behavioral — with an LLM acting as the
 interviewer and producing a structured report at the end.
 
-**Status: in progress.** The schema and data-access layer are built and tested;
-the HTTP API, LLM integration, and frontend are not yet started.
+**Status: in progress.** The schema, data-access layer, and HTTP API are built
+and tested — a full four-stage session is drivable over HTTP. LLM integration
+is under way; auth, code execution, and the frontend are not yet started.
 
 ---
 
 ## Stack
 
-|                 |                                                 |
-| --------------- | ----------------------------------------------- |
-| Runtime         | Node 22, TypeScript (strict), ESM               |
-| Database        | PostgreSQL 17 (Supabase)                        |
-| Data access     | Raw SQL via `pg` — no ORM                       |
-| Validation      | Zod, at the repository boundary                 |
-| Migrations      | Hand-written SQL, `node-pg-migrate`             |
-| Tests           | Vitest, integration tests against real Postgres |
-| API _(planned)_ | Express 5                                       |
+|             |                                              |
+| ----------- | -------------------------------------------- |
+| Runtime     | Node 22, TypeScript (strict), ESM            |
+| Database    | PostgreSQL 17 (Supabase)                     |
+| Data access | Raw SQL via `pg` — no ORM                    |
+| Validation  | Zod, at the repository boundary              |
+| Migrations  | Hand-written SQL, `node-pg-migrate`          |
+| Tests       | Vitest — service unit tests + DB integration |
+| API         | Express 5                                    |
+| LLM         | Behind an adapter interface; Gemini planned  |
 
 ---
 
@@ -34,13 +36,14 @@ npm run migrate:up            # create the schema
 npm run seed                  # load development data
 ```
 
-| Command                        |                                      |
-| ------------------------------ | ------------------------------------ |
-| `npm test`                     | integration tests (needs a database) |
-| `npm run typecheck`            | `tsc --noEmit` across all workspaces |
-| `npm run lint`                 | ESLint with type-aware rules         |
-| `npm run migrate:up` / `:down` | apply / roll back one migration      |
-| `npm run seed`                 | idempotent development data          |
+| Command                              |                                                |
+| ------------------------------------ | ---------------------------------------------- |
+| `npm run dev -w @prod-interview/api` | run the API with `--watch`                     |
+| `npm test`                           | service + integration tests (needs a database) |
+| `npm run typecheck`                  | `tsc --noEmit` across all workspaces           |
+| `npm run lint`                       | ESLint with type-aware rules                   |
+| `npm run migrate:up` / `:down`       | apply / roll back one migration                |
+| `npm run seed`                       | idempotent development data                    |
 
 Using Supabase: take the **session pooler** connection string (port 5432), not
 the transaction pooler — this is a long-lived process with its own `pg.Pool`,
@@ -54,14 +57,17 @@ and the transaction pooler does not support prepared statements.
 apps/api/src/
   config/     env parsing (Zod) — the only reader of process.env
   db/         pool, transaction helper, shared types
-  modules/    vertical slices: sessions/, users/
+  errors/     AppError hierarchy — services throw, middleware maps to HTTP
+  middleware/ error handler (RFC 9457), validation, request IDs, dev user
+  lib/        external adapters behind interfaces (llm/)
+  modules/    vertical slices: sessions/, stages/, messages/, users/
 packages/shared/   request/response contract shared with the future client
 db/migrations/     hand-written SQL, up and down
 docs/              design notes
 ```
 
 Code is organised **by feature, not by layer** — `modules/sessions/` holds its
-own repository, schemas, and (later) service and routes. Vertical slices stay
+own routes, controller, service, repository, and schemas. Vertical slices stay
 navigable as a codebase grows; `controllers/` + `services/` + `models/` folders
 mean editing four directories for every change.
 
@@ -69,7 +75,7 @@ mean editing four directories for every change.
 
 ## Architecture
 
-Every request will flow through exactly these layers:
+Every request flows through exactly these layers:
 
 ```
 route        → HTTP wiring + request validation. No logic.
@@ -80,8 +86,8 @@ repository   → SQL, and only SQL. Returns validated domain objects.
 
 Services never import from `express` or touch `req`/`res`; repositories never
 contain business logic or know that HTTP exists. That constraint is what makes
-services testable against a fake repository, and it is why most tests will live
-at that layer.
+services testable against a fake repository, and it is why most tests live at
+that layer.
 
 ---
 
@@ -129,6 +135,9 @@ index whose column order matches the `ORDER BY`.
 
 ## Testing
 
+Services are covered by **unit tests against in-memory fakes** — no database,
+a few milliseconds each — since that is where the branching logic lives.
+
 Repositories are covered by **integration tests against a real database** — a
 mocked driver proves the SQL string is unchanged, not that it is correct. Each
 test runs inside a transaction that is always rolled back, so tests create
@@ -146,9 +155,9 @@ wrong." Breaking a query on purpose and confirming the right test fails
 | -------------- | ------------------------------------------------------------------ |
 | ✅ Foundations | workspaces, strict TS, lint, env parsing                           |
 | ✅ Schema      | migrations, constraints, indexes, seed data                        |
-| 🔨 Data access | pool, transactions, repositories, Zod row schemas                  |
-| Core API       | Express, error handling, session lifecycle, stage state machine    |
-| LLM            | adapter behind an interface, SSE streaming, transcript persistence |
+| ✅ Data access | pool, transactions, repositories, Zod row schemas                  |
+| ✅ Core API    | Express, error handling, session lifecycle, stage state machine    |
+| 🔨 LLM         | adapter behind an interface, SSE streaming, transcript persistence |
 | Auth           | provider-issued JWTs, ownership authorization                      |
 | Execution      | sandboxed code execution with enforced resource limits             |
 | Frontend       | React client, streaming UI, editor                                 |
