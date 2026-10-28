@@ -1,11 +1,14 @@
 import { pool } from "../../db/pool.ts";
 import { uuidv7 } from "../../db/uuid.ts";
+import { ConflictError } from "../../errors/AppError.ts";
 import { FakeLlmAdapter } from "../../lib/llm/fake.adapter.ts";
 import type { LlmChunk } from "../../lib/llm/llm.types.ts";
 import { sessionService } from "../sessions/session.service.ts";
-import type { StageKind } from "../stages/stage.schemas.ts";
+import type { Session } from "../sessions/session.schemas.ts";
+import type { Stage, StageKind } from "../stages/stage.schemas.ts";
 import type { MessageServiceDeps } from "./message.deps.ts";
 import * as messageRepository from "./message.repository.ts";
+import type { Message } from "./message.schemas.ts";
 
 /**
  * One interview turn: the candidate says something, the interviewer replies.
@@ -47,12 +50,22 @@ export const MAX_TURNS_BY_STAGE: Record<StageKind, number> = {
  */
 export const MAX_OUTPUT_TOKENS = 2048;
 
+/**
+ * Placeholder. Prompt design is still an open question — this exists so the
+ * shape is right and the plumbing is exercised, not because the wording is
+ * good. Everything the interviewer persona needs is derivable from these three
+ * values, which is why the adapter never sees them.
+ */
+function buildSystemInstruction(session: Session, stage: Stage): string {
+  return [
+    `You are conducting the ${stage.kind} stage of a technical interview.`,
+    `Track: ${session.track}. Difficulty: ${session.difficulty}.`,
+    `Ask one question at a time and respond to what the candidate actually said.`,
+  ].join(" ");
+}
+
 export function createMessageService(deps: MessageServiceDeps) {
   const { db, messageRepository, sessions, llm } = deps;
-
-  // Scaffolding: keeps `typecheck` and `lint` green while the two phases below
-  // are unwritten. Delete this line once they use these.
-  void [db, messageRepository, sessions, llm, uuidv7];
 
   /**
    * Two phases, and the split is the important part of this signature.
@@ -71,72 +84,108 @@ export function createMessageService(deps: MessageServiceDeps) {
    * `async function*`. A generator body does not run until the first pull, so
    * guards inside one would fire *after* the headers were already sent.
    */
-  // eslint-disable-next-line @typescript-eslint/require-await -- stub; phase 1 awaits
   async function sendMessage(
     sessionId: string,
     userId: string,
     content: string,
   ): Promise<AsyncIterable<LlmChunk>> {
-    void [sessionId, userId, content]; // scaffolding — delete when written
+    // Ownership first. Throws NotFoundError when the session does not exist
+    // *or* is not this user's — the same error for both, so a caller cannot
+    // probe for which.
+    const { session, stages } = await sessions.getSession(sessionId, userId);
 
-    // TODO(raymond) — phase 1: validate and persist the candidate message.
-    //
-    //   1. Ownership + load. `sessions.getSession(sessionId, userId)` already
-    //      throws NotFoundError for a session that does not exist or is not
-    //      this user's, and it hands back the stages.
-    //
-    //   2. Which stage? Exactly one is `active` — that invariant is held by
-    //      uq_stages_one_active_per_session. What should happen if there is
-    //      none? (Compare `advanceSession`: it treats that as a corrupt state,
-    //      not a 404.)
-    //
-    //   3. Is the session still open? Messaging a finished interview is not a
-    //      404 — the session is real and it is yours.
-    //
-    //   4. The turn cap. MAX_TURNS_BY_STAGE is keyed by stage kind. Note you
-    //      need the count of *candidate* messages, not all messages, and the
-    //      transcript you are about to read gives you that without a second
-    //      query.
-    //
-    //   5. Insert the candidate message. Before the LLM call, not after —
-    //      that ordering is what lets chk_messages_content_length reject an
-    //      oversized message before any tokens are spent.
-    //
-    //   Then return the generator below. Note what phase 1 has to hand it: the
-    //   transcript to send, and the stage id to write the reply against.
-    throw new Error("not implemented");
+    // Checked before the stage lookup on purpose. A finished session has no
+    // active stage either, so the reverse order would report the corrupt-state
+    // conflict for the perfectly ordinary case of a completed interview.
+    if (session.status !== "in_progress") {
+      throw new ConflictError(
+        "This interview has already ended and cannot take new messages.",
+      );
+    }
+
+    const stage = stages.find((s) => s.status === "active");
+    if (!stage) {
+      // Should be unreachable: an in-progress session always has exactly one
+      // active stage, per uq_stages_one_active_per_session. Worth a loud 409
+      // rather than a repair — we would be guessing at how it broke.
+      throw new ConflictError(
+        "This interview has no stage in progress. Please reload and try again.",
+      );
+    }
+
+    // Read once, use twice: the turn cap counts from this, and the LLM gets it
+    // as the conversation history. A separate count query would be a second
+    // round trip for a number this array already has.
+    const transcript = await messageRepository.listByStageId(db, stage.id);
+
+    // Candidate messages only. Interviewer replies are not the candidate's
+    // turns, and counting both would halve every cap.
+    const turnsTaken = transcript.filter((m) => m.role === "candidate").length;
+    if (turnsTaken >= MAX_TURNS_BY_STAGE[stage.kind]) {
+      throw new ConflictError(
+        `This stage has reached its limit of ${String(
+          MAX_TURNS_BY_STAGE[stage.kind],
+        )} messages. Advance to continue the interview.`,
+      );
+    }
+
+    // Before the LLM call, never after: this is what lets
+    // chk_messages_content_length reject an oversized message while it is
+    // still free to do so.
+    const candidateMessage = await messageRepository.create(db, {
+      id: uuidv7(),
+      stageId: stage.id,
+      role: "candidate",
+      content,
+    });
+
+    // The message just saved has to be in what the model sees, otherwise it
+    // would be answering the previous turn.
+    return streamReply(session, stage, [...transcript, candidateMessage]);
   }
 
-  /**
-   * Phase 2 — the pass-through. Forwards chunks to the caller, accumulates the
-   * text, and persists the interviewer message when the provider finishes.
-   */
-  // TODO(raymond) — phase 2: stream and persist.
+  // TODO(raymond) — phase 2: the pass-through.
+  //
+  //   Forward every chunk to the caller, accumulate the text as it goes, and
+  //   write the interviewer message with `messageRepository.create`.
+  //
+  //   `buildSystemInstruction(session, stage)` and MAX_OUTPUT_TOKENS are the
+  //   other two things `llm.streamReply` needs.
+  //
+  //   Two things to decide:
+  //
+  //   - §10 allows logging the token counts off the `done` chunk, and forbids
+  //     logging the text. Nothing else about `done` is needed for the
+  //     forwarding itself.
+  //
+  //   - A truncated reply must not be saved — it would be resent to Gemini
+  //     next turn as though it were a complete question.
+  //
+  //   Which brings up the one genuinely subtle thing here. This loop can end
+  //   three different ways:
+  //
+  //       the provider finishes normally
+  //       the provider throws partway
+  //       the caller stops pulling (candidate closed the tab)
+  //
+  //   Work out which of those reach the code *after* the loop and which do
+  //   not — and in particular, whether a `finally` block would help or hurt.
+  //   Getting the insert in the right place means you need no flag at all.
   //
   //   Shape:
-  //     async function* streamReply(stageId, transcript): AsyncIterable<LlmChunk> {
-  //       for await (const chunk of llm.streamReply({ ... })) {
-  //         // forward it onward, and keep the text
-  //       }
-  //     }
-  //
-  //   Three things to get right:
-  //
-  //   - Build `systemInstruction` from the stage kind, the track, and the
-  //     difficulty. Prompt design is still open — a placeholder string is fine
-  //     for now, so long as the shape is right.
-  //
-  //   - Only save on a clean finish. The `done` chunk is the signal: reaching
-  //     it means the provider ended on its own terms. No `done` means the
-  //     stream threw, and a truncated interviewer message must not be written —
-  //     it would be resent to Gemini next turn as if it were complete.
-  //
-  //   - §10: log the token counts off `done`, never the text.
-  //
-  //   The subtle one, worth thinking about before you write it: what happens to
-  //   the code after the `for await` if the caller stops pulling early — the
-  //   candidate closes the tab mid-reply? Which parts of a generator body are
-  //   guaranteed to run, and which are not?
+  //     async function* streamReply(
+  //       session: Session,
+  //       stage: Stage,
+  //       transcript: Message[],
+  //     ): AsyncIterable<LlmChunk> { ... }
+  // eslint-disable-next-line require-yield, @typescript-eslint/require-await -- stub
+  async function* streamReply(
+    session: Session,
+    stage: Stage,
+    transcript: Message[],
+  ): AsyncIterable<LlmChunk> {
+    void [session, stage, transcript, llm, buildSystemInstruction];
+  }
 
   return { sendMessage };
 }
